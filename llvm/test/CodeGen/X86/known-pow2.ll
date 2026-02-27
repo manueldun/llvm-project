@@ -910,6 +910,46 @@ define i1 @pow2_and_i128(i128 %num, i128 %shift) {
   ret i1 %bool
 }
 
+define i1 @pow2_bswap(i32 %x,i1 %c){
+; CHECK-LABEL: pow2_bswap:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    # kill: def $esi killed $esi def $rsi
+; CHECK-NEXT:    andl $1, %esi
+; CHECK-NEXT:    leal 2(%rsi,%rsi), %eax
+; CHECK-NEXT:    bswapl %eax
+; CHECK-NEXT:    testl %eax, %edi
+; CHECK-NEXT:    setne %al
+; CHECK-NEXT:    retq
+  %y = select i1 %c, i32 4, i32 2
+  %d = call i32 @llvm.bswap.i32(i32 %y)
+  %and = and i32 %x, %d
+  %r = icmp eq i32 %and, %d
+  ret i1 %r
+}
+
+define i1 @pow2_bitreverse(i32 %x,i1 %c){
+; CHECK-LABEL: pow2_bitreverse:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    # kill: def $esi killed $esi def $rsi
+; CHECK-NEXT:    andl $1, %esi
+; CHECK-NEXT:    leal 2(%rsi,%rsi), %eax
+; CHECK-NEXT:    bswapl %eax
+; CHECK-NEXT:    movl %eax, %ecx
+; CHECK-NEXT:    shll $6, %eax
+; CHECK-NEXT:    leal (%rax,%rcx,4), %ecx
+; CHECK-NEXT:    andl $268435456, %ecx # imm = 0x10000000
+; CHECK-NEXT:    shrl %eax
+; CHECK-NEXT:    leal (%rax,%rcx,2), %eax
+; CHECK-NEXT:    testl %eax, %edi
+; CHECK-NEXT:    setne %al
+; CHECK-NEXT:    retq
+  %y = select i1 %c, i32 4, i32 2
+  %d = call i32 @llvm.bitreverse.i32(i32 %y)
+  %and = and i32 %x, %d
+  %r = icmp eq i32 %and, %d
+  ret i1 %r
+}
+
 ; Negative test: Y = a | 1 is always odd/non-zero but not pow2, fold should not trigger.
 define i32 @pow2_blsi_add_fail(i32 %x, i32 %a) {
 ; CHECK-LABEL: pow2_blsi_add_fail:
@@ -940,6 +980,50 @@ define i32 @pow2_blsi_add(i32 %x, i32 %a) {
   %y = and i32 %a, %neg_a
   %x_add_y = add i32 %x, %y
   %r = and i32 %x_add_y, %y
+  ret i32 %r
+}
+
+
+; Test that (X + Y) & Y --> ~X & Y when Y = a & -a (pow2-or-zero).
+define i32 @pow2_rotl_orzero(i32 %x, i1 %c) {
+; CHECK-LABEL: pow2_rotl_orzero:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    notb %sil
+; CHECK-NEXT:    movzbl %sil, %eax
+; CHECK-NEXT:    andl $1, %eax
+; CHECK-NEXT:    addl %eax, %eax
+; CHECK-NEXT:    bswapl %eax
+; CHECK-NEXT:    roll $3, %eax
+; CHECK-NEXT:    notl %edi
+; CHECK-NEXT:    andl %edi, %eax
+; CHECK-NEXT:    retq
+  %y = select i1 %c, i32 0, i32 2
+  %d = call i32 @llvm.bswap.i32(i32 %y)
+  %rot_y = call i32 @llvm.fshl.i32(i32 %d, i32 %d, i32 3)
+  %x_add_y = add i32 %x, %rot_y
+  %r = and i32 %x_add_y, %rot_y
+  ret i32 %r
+}
+
+
+; Test that (X + Y) & Y --> ~X & Y when Y = a & -a (pow2-or-zero).
+define i32 @pow2_rotr_orzero(i32 %x, i1 %c) {
+; CHECK-LABEL: pow2_rotr_orzero:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    notb %sil
+; CHECK-NEXT:    movzbl %sil, %eax
+; CHECK-NEXT:    andl $1, %eax
+; CHECK-NEXT:    addl %eax, %eax
+; CHECK-NEXT:    bswapl %eax
+; CHECK-NEXT:    rorl $3, %eax
+; CHECK-NEXT:    notl %edi
+; CHECK-NEXT:    andl %edi, %eax
+; CHECK-NEXT:    retq
+  %y = select i1 %c, i32 0, i32 2
+  %d = call i32 @llvm.bswap.i32(i32 %y)
+  %rot_y = call i32 @llvm.fshr.i32(i32 %d, i32 %d, i32 3)
+  %x_add_y = add i32 %x, %rot_y
+  %r = and i32 %x_add_y, %rot_y
   ret i32 %r
 }
 
